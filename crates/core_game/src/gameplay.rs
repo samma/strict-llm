@@ -82,7 +82,8 @@ impl Plugin for GameplayPlugin {
                 Update,
                 (
                     handle_selection_input,
-                    issue_move_orders.after(handle_selection_input),
+                    update_selection_visuals.after(handle_selection_input),
+                    issue_move_orders.after(update_selection_visuals),
                     update_beam_effects,
                 ),
             );
@@ -257,6 +258,8 @@ struct SelectionState {
     radius: f32,
     circle_entity: Option<Entity>,
     selected: Vec<Entity>,
+    prev_selected: Vec<Entity>,
+    dirty: bool,
 }
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -293,6 +296,11 @@ impl UnitKind {
 
 #[derive(Component)]
 struct SelectionCircle;
+
+#[derive(Component)]
+struct SelectionHighlight {
+    glow: Entity,
+}
 
 #[derive(Component)]
 struct BeamEffect {
@@ -489,7 +497,9 @@ fn handle_selection_input(
                 }
             }
         }
+        selection.prev_selected = std::mem::take(&mut selection.selected);
         selection.selected = selected;
+        selection.dirty = true;
         selection.is_dragging = false;
         selection.radius = 0.0;
         if let Some(entity) = selection.circle_entity.take() {
@@ -566,6 +576,47 @@ fn cursor_world_position(
         .viewport_to_world(camera_transform, cursor_pos)
         .ok()?;
     Some(ray.origin.truncate())
+}
+
+fn update_selection_visuals(
+    mut commands: Commands,
+    mut selection: ResMut<SelectionState>,
+    units: Query<&Unit>,
+    highlights: Query<&SelectionHighlight>,
+) {
+    if !selection.dirty {
+        return;
+    }
+
+    for entity in selection.prev_selected.drain(..) {
+        if let Ok(highlight) = highlights.get(entity) {
+            commands.entity(highlight.glow).despawn_recursive();
+            commands.entity(entity).remove::<SelectionHighlight>();
+        }
+    }
+
+    for &entity in &selection.selected {
+        if highlights.get(entity).is_ok() {
+            continue;
+        }
+        if units.get(entity).is_err() {
+            continue;
+        }
+        let glow = commands
+            .spawn((
+                Sprite {
+                    color: Color::srgba(1.0, 0.95, 0.2, 0.35),
+                    custom_size: Some(Vec2::new(42.0, 56.0)),
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 0.0, -0.1),
+            ))
+            .id();
+        commands.entity(entity).add_child(glow);
+        commands.entity(entity).insert(SelectionHighlight { glow });
+    }
+
+    selection.dirty = false;
 }
 
 fn move_units(time: Res<Time>, mut units: Query<(&mut Transform, &Unit)>) {
