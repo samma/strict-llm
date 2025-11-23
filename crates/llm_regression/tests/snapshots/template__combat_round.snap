@@ -1,0 +1,9 @@
+---
+source: crates/llm_regression/tests/template.rs
+expression: trace
+---
+{
+  "roll": 11,
+  "seed": 42
+}
+

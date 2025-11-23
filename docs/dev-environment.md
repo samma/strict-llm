@@ -45,8 +45,15 @@ CI mirrors these commands; never introduce bespoke scripts without updating the 
 ## 6. Pull Request Protocol
 
 - PR description template requires: feature summary, validation commands run, checklist entries touched, and links to `.llm_logs`.
-- CI gates: `verify-core`, wasm smoke build, regression harness (see `tests/llm_regression/`), and asset validation.
+- CI gates: `verify-core`, wasm smoke build, regression harness (see `crates/llm_regression/`), and asset validation.
 - Failing guardrail CLI runs (see `tools/llm_guardrail_cli`) block merge until the report is attached and addressed.
+
+## 7. CI & Guardrails
+
+- Workflow: `.github/workflows/ci.yml` runs on every push/PR. It executes `just verify-core`, `cargo run -p guardrail_cli -- validate --config tools/llm_guardrail_cli/guardrail.example.toml --id ci`, `just build-wasm`, and `just asset-validate`.
+- Guardrail artifacts: the workflow seeds `.llm_logs/latest/` with placeholder prompt/response/diff so the CLI can confirm analyzers succeed. Replace these with real data once CI captures prompts automatically.
+- Failure triage: map any `guardrail_cli` failures to the relevant `docs/validation-matrix.md` row and document the remediation plan in the PR.
+- Regression harness: because `just test` invokes `cargo nextest run --workspace`, any failing deterministic test automatically surfaces in CI logs.
 
 Following this environment guide keeps the team and LLM assistants aligned, minimizes build drift, and ensures quick, deterministic feedback during game development.
 

@@ -6,15 +6,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-function Ensure-Directory {
+function Test-DirectoryPath {
     param([string]$Path)
     if (-not (Test-Path -Path $Path -PathType Container)) {
         throw "Missing expected directory: $Path. Create it or update scripts/validate_assets.ps1."
     }
 }
 
-Ensure-Directory -Path $SourceDir
-Ensure-Directory -Path $RuntimeDir
+Test-DirectoryPath -Path $SourceDir
+Test-DirectoryPath -Path $RuntimeDir
 
 $sourceFiles = Get-ChildItem -Path $SourceDir -Recurse -File -ErrorAction Stop
 

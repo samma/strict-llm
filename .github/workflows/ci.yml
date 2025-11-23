@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Install helpers
+        run: |
+          cargo install just --locked
+          cargo install cargo-nextest --locked
+
+      - name: Verify core workflow
+        run: just verify-core
+
+      - name: Prepare guardrail artifacts
+        run: |
+          mkdir -p .llm_logs/latest
+          echo "# ci prompt" > .llm_logs/latest/prompt.md
+          echo "# ci response" > .llm_logs/latest/response.md
+          echo "" > .llm_logs/latest/patch.diff
+
+      - name: Guardrail validation
+        run: cargo run -p guardrail_cli -- validate --config tools/llm_guardrail_cli/guardrail.example.toml --id ci
+
+      - name: Wasm build
+        run: just build-wasm
+
+      - name: Asset validation
+        run: just asset-validate
+

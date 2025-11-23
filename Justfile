@@ -10,7 +10,7 @@ lint:
 
 # High-throughput test runner
 test:
-    cargo nextest run --all-targets
+    cargo nextest run --workspace --all-targets
 
 # Native binary build
 build-native:

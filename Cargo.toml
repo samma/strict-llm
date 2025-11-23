@@ -1,0 +1,27 @@
+[workspace]
+members = [
+    "crates/core_game",
+    "crates/guardrail_core",
+    "crates/guardrail_cli",
+    "crates/llm_regression",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.75"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+insta = { version = "1", features = ["json"] }
+rand = { version = "0.8", features = ["std", "serde1"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+walkdir = "2"
+

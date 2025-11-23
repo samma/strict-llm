@@ -1,0 +1,16 @@
+# Generated build artifacts
+/target/
+/reports/
+
+# IDE / tooling
+/.idea/
+.vscode/
+/.llm_logs/
+
+# Assets
+/assets/
+/assets_src/cache/
+
+# Misc
+*.log
+

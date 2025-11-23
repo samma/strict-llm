@@ -10,16 +10,13 @@ platforms = ["native", "wasm"]
 checklist_refs = ["docs/validation-matrix.md#core-loop"]
 
 [analyzers]
-fmt = { enabled = true }
-clippy = { enabled = true, args = ["--all-targets", "--all-features", "-D", "warnings"] }
-deterministic = { enabled = true }
-unsafe_audit = { enabled = true }
-bevy_schedule = { enabled = false }   # enable once Bevy adapter lands
+fmt = true
+clippy = true
+deterministic = true
 
 [report]
 path = "reports/latest.json"
 include_logs = true
-telemetry_dir = "reports/telemetry"
 
 [telemetry]
 enable_trace = true

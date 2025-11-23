@@ -1,50 +1,40 @@
-# LLM Guardrail CLI (Draft)
+# LLM Guardrail CLI
 
-The guardrail CLI is a lightweight Rust binary that inspects LLM-generated change sets before humans review them. It standardizes data capture, automated analysis, and reporting.
+`guardrail_cli` enforces the guardrails defined in `docs/llm-rust-guardrails.md` before any LLM-produced change reaches a PR. It lives in `crates/guardrail_cli` and relies on `guardrail_core` for config parsing, analyzers, and report generation.
 
-## High-level Flow
+## Build & Install
 
-1. **Ingest** an artifact (prompt, response, proposed diff).
-2. **Validate** against guardrails:
-   - `cargo fmt` / `cargo clippy` dry-runs on patched tree.
-   - Static rules (deterministic RNG usage, unsafe audit notes).
-   - Checklist linkage to `docs/validation-matrix.md`.
-3. **Augment**: create TODO/test stubs inside `tests/llm_regression/` when gaps are detected.
-4. **Emit** a JSON report consumed by humans + CI.
+```
+cargo build -p guardrail_cli
+# or run ad-hoc
+cargo run -p guardrail_cli -- <command> ...
+```
 
-## Proposed Commands
+## Commands
 
-| Command | Description |
-| --- | --- |
-| `guardrail ingest --prompt prompt.md --response response.md --diff diff.patch` | Stores artifacts under `.llm_logs/` with metadata. |
-| `guardrail validate --spec docs/feature.md --targets native,wasm` | Runs analyzers (formatter, lint, deterministic seed scan, unsafe checklist). |
-| `guardrail report --out reports/<id>.json` | Serializes summary per `report_schema.json`, including risk level and required follow-ups. |
-| `guardrail annotate --pr 123` | (Future) Pushes GitHub/GitLab discussion comments from the report. |
+| Command | Example | Description |
+| --- | --- | --- |
+| `ingest` | `cargo run -p guardrail_cli -- ingest --prompt .llm_logs/incoming/prompt.md --response .llm_logs/incoming/response.md --diff .llm_logs/incoming/patch.diff --out-dir .llm_logs/pr-42` | Copies prompt/response/diff artifacts into a canonical folder and records metadata for later audits. |
+| `validate` | `cargo run -p guardrail_cli -- validate --config tools/llm_guardrail_cli/guardrail.example.toml --id pr-42-attempt-1` | Runs analyzers configured in the TOML file (fmt, clippy, deterministic seed scan) and prints a JSON report. If the config specifies `report.path`, the report is also written to disk. |
+| `report` | `cargo run -p guardrail_cli -- report --input reports/pr-42-attempt-1.json` | Reads an existing report (see `report_schema.json`) and prints a concise summary. Useful for CI log output or quick local checks. |
+
+## Configuration
+
+`tools/llm_guardrail_cli/guardrail.example.toml` demonstrates the available settings:
+
+- `sources.*` — relative paths to the prompt/response/diff that triggered the run.
+- `analyzers` — enable/disable `fmt`, `clippy`, and `deterministic_seed_scan`.
+- `report.path` — optional output path for the generated JSON. Set `include_logs = true` when CI should capture analyzer logs too.
+
+Extend the config as new analyzers land (e.g., Bevy schedule inspector) by adding toggles and hooking them into `guardrail_core::analyzers`.
+
+## Reports
+
+All outputs conform to `report_schema.json`. See `report.example.json` for the artifact produced by `validate`. CI should treat `summary.status = fail` as a hard blocker; `warn` requires a human sign-off referencing the linked validation matrix row.
 
 ## Extensibility
 
-- **Analyzers** are trait objects keyed by config. Examples: Bevy schedule inspector, Macroquad render pass checker. They can be enabled via `guardrail.toml`.
-- **Outputs** currently include JSON and markdown. Adding SARIF or Octopus Deploy release notes merely requires a new serializer.
-- **Telemetry** hooks into `tracing` and writes span data to `reports/<timestamp>.log`, enabling offline diagnosis.
-
-## Implementation Sketch
-
-```
-crates/
-  guardrail_core/      # data model, analyzers, report pipeline
-  guardrail_cli/       # clap-based CLI binary (declared here under tools/)
-tools/
-  llm_guardrail_cli/
-    README.md
-    report_schema.json
-    report.example.json
-```
-
-The CLI will eventually join the workspace via a `[workspace]` root `Cargo.toml`. Until then, keep the design documents in this folder to guide implementation.
-
-## Next Steps
-
-1. Finalize the JSON schema so humans + CI parse the same report format.
-2. Implement the ingest + validate commands backed by `guardrail_core`.
-3. Wire the CLI into CI (e.g., `just guardrails`) and make merge gating conditional on a green report.
+- **Analyzers**: each check implements a simple trait and runs inside `guardrail_core`. Add new analyzers (asset validation, unsafe audits) behind config flags so they can be rolled out gradually.
+- **Outputs**: the `report` command currently prints JSON; adding SARIF or Markdown writers only requires serializing the `GuardrailReport` struct differently.
+- **Telemetry**: all commands emit `tracing` logs. Point `RUST_LOG=guardrail_cli=debug` during CI debugging to capture detailed analyzer traces.
 
