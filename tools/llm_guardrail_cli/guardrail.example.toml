@@ -1,0 +1,27 @@
+# Example configuration consumed by the guardrail CLI.
+
+[sources]
+prompt = ".llm_logs/latest/prompt.md"
+response = ".llm_logs/latest/response.md"
+diff = ".llm_logs/latest/patch.diff"
+
+[targets]
+platforms = ["native", "wasm"]
+checklist_refs = ["docs/validation-matrix.md#core-loop"]
+
+[analyzers]
+fmt = { enabled = true }
+clippy = { enabled = true, args = ["--all-targets", "--all-features", "-D", "warnings"] }
+deterministic = { enabled = true }
+unsafe_audit = { enabled = true }
+bevy_schedule = { enabled = false }   # enable once Bevy adapter lands
+
+[report]
+path = "reports/latest.json"
+include_logs = true
+telemetry_dir = "reports/telemetry"
+
+[telemetry]
+enable_trace = true
+trace_filter = "info,guardrail=debug"
+

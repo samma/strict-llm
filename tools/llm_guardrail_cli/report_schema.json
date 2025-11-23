@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LLM Guardrail Report",
+  "type": "object",
+  "required": ["id", "timestamp", "source", "summary", "risks", "checks", "next_actions"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for this guardrail run (e.g., timestamp or PR+attempt)."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "required": ["prompt_path", "response_path", "diff_path"],
+      "properties": {
+        "prompt_path": { "type": "string" },
+        "response_path": { "type": "string" },
+        "diff_path": { "type": "string" },
+        "spec_refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Documentation or design files referenced during validation."
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["status", "score", "notes"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "warn"]
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence score where 1.0 means all guardrails satisfied."
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "description", "severity"],
+        "properties": {
+          "category": { "type": "string" },
+          "description": { "type": "string" },
+          "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+          "recommended_action": { "type": "string" }
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "description": "Detailed results for each automated step (fmt, clippy, deterministic scan, etc.).",
+      "items": {
+        "type": "object",
+        "required": ["name", "status"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": { "type": "string", "enum": ["pass", "fail", "warn", "skipped"] },
+          "details": { "type": "string" },
+          "log_path": { "type": "string" }
+        }
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "description": "Concrete tasks to address before merge.",
+      "items": {
+        "type": "object",
+        "required": ["description", "owner"],
+        "properties": {
+          "description": { "type": "string" },
+          "owner": { "type": "string" },
+          "due": { "type": "string", "format": "date" },
+          "linked_checklist": { "type": "string", "description": "Reference to docs/validation-matrix row." }
+        }
+      }
+    }
+  }
+}
+

@@ -1,0 +1,57 @@
+{
+  "id": "pr-42-attempt-1",
+  "timestamp": "2025-11-23T02:20:00Z",
+  "source": {
+    "prompt_path": ".llm_logs/pr-42/prompt.md",
+    "response_path": ".llm_logs/pr-42/response.md",
+    "diff_path": ".llm_logs/pr-42/patch.diff",
+    "spec_refs": [
+      "docs/llm-rust-guardrails.md",
+      "docs/validation-matrix.md#combat-ecs"
+    ]
+  },
+  "summary": {
+    "status": "warn",
+    "score": 0.78,
+    "notes": "Formatting + linting passed. Deterministic seed missing in new regression test."
+  },
+  "risks": [
+    {
+      "category": "determinism",
+      "description": "New loot drop test uses thread_rng, which is non-deterministic.",
+      "severity": "medium",
+      "recommended_action": "Switch to StdRng::seed_from_u64 and document the seed."
+    }
+  ],
+  "checks": [
+    {
+      "name": "fmt",
+      "status": "pass",
+      "details": "cargo fmt --all"
+    },
+    {
+      "name": "clippy",
+      "status": "pass",
+      "details": "cargo clippy --all-targets --all-features -D warnings"
+    },
+    {
+      "name": "deterministic_seed_scan",
+      "status": "fail",
+      "details": "Found RNG usage without seed in tests/loot.rs:42",
+      "log_path": "reports/pr-42-attempt-1/determinism.log"
+    },
+    {
+      "name": "unsafe_audit",
+      "status": "skipped",
+      "details": "No unsafe blocks detected."
+    }
+  ],
+  "next_actions": [
+    {
+      "description": "Update loot regression test to use StdRng::seed_from_u64(42)",
+      "owner": "engine-team",
+      "linked_checklist": "docs/validation-matrix.md#loot-drops"
+    }
+  ]
+}
+
