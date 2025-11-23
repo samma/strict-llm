@@ -16,9 +16,9 @@ const DEFAULT_SPAWN_INTERVAL: f32 = 10.0;
 const MIN_PLAYERS: usize = 2;
 const MAX_PLAYERS: usize = 8;
 const UNIT_SPEED: f32 = 120.0;
+const UNIT_ACCELERATION: f32 = 8.0;
 const UNIT_SEPARATION_RADIUS: f32 = 40.0;
-const MIN_SELECTION_RADIUS: f32 = 40.0;
-const SELECTION_GROWTH_RATE: f32 = 80.0;
+const SEPARATION_FORCE: f32 = 60.0;
 const FORMATION_SPACING: f32 = 60.0;
 const LASER_RANGE: f32 = 260.0;
 const LASER_DAMAGE: f32 = 6.0;
@@ -255,8 +255,8 @@ struct SpawnTimers {
 struct SelectionState {
     is_dragging: bool,
     start_world: Vec2,
-    radius: f32,
-    circle_entity: Option<Entity>,
+    current_world: Vec2,
+    rectangle_entity: Option<Entity>,
     selected: Vec<Entity>,
     prev_selected: Vec<Entity>,
     dirty: bool,
@@ -273,6 +273,7 @@ pub struct Unit {
     pub health: f32,
     pub max_health: f32,
     pub attack_timer: Timer,
+    pub velocity: Vec2,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -295,7 +296,7 @@ impl UnitKind {
 }
 
 #[derive(Component)]
-struct SelectionCircle;
+struct SelectionRect;
 
 #[derive(Component)]
 struct SelectionHighlight {
@@ -393,6 +394,7 @@ fn spawn_unit(
                 UnitKind::Laser.attack_cooldown(),
                 TimerMode::Repeating,
             ),
+            velocity: Vec2::ZERO,
         },
     ));
 }
@@ -441,7 +443,6 @@ fn average_unit_position(player: PlayerId, units: &Query<(&Unit, &Transform)>) -
 }
 
 fn handle_selection_input(
-    time: Res<Time>,
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
@@ -449,7 +450,7 @@ fn handle_selection_input(
     mut commands: Commands,
     mut queries: ParamSet<(
         Query<(Entity, &Transform, &Unit)>,
-        Query<(&mut Sprite, &mut Transform), With<SelectionCircle>>,
+        Query<(&mut Sprite, &mut Transform), With<SelectionRect>>,
     )>,
     control: Res<ControlSettings>,
 ) {
@@ -459,29 +460,41 @@ fn handle_selection_input(
         if let Some(pos) = cursor_world {
             selection.is_dragging = true;
             selection.start_world = pos;
-            selection.radius = MIN_SELECTION_RADIUS;
+            selection.current_world = pos;
 
             let entity = commands
                 .spawn((
                     Sprite {
-                        color: Color::srgba(0.2, 0.8, 1.0, 0.25),
-                        custom_size: Some(Vec2::splat(selection.radius * 2.0)),
+                        color: Color::srgba(0.2, 0.8, 1.0, 0.2),
+                        custom_size: Some(Vec2::splat(2.0)),
                         ..default()
                     },
                     Transform::from_xyz(pos.x, pos.y, 0.5),
-                    SelectionCircle,
+                    SelectionRect,
                 ))
                 .id();
-            selection.circle_entity = Some(entity);
+            selection.rectangle_entity = Some(entity);
         }
     }
 
     if selection.is_dragging && buttons.pressed(MouseButton::Left) {
-        selection.radius += SELECTION_GROWTH_RATE * time.delta_secs();
-        if let Some(entity) = selection.circle_entity {
+        if let Some(pos) = cursor_world {
+            selection.current_world = pos;
+        }
+        if let Some(entity) = selection.rectangle_entity {
             if let Ok((mut sprite, mut transform)) = queries.p1().get_mut(entity) {
-                sprite.custom_size = Some(Vec2::splat(selection.radius * 2.0));
-                transform.translation = selection.start_world.extend(0.5);
+                let min = Vec2::new(
+                    selection.start_world.x.min(selection.current_world.x),
+                    selection.start_world.y.min(selection.current_world.y),
+                );
+                let max = Vec2::new(
+                    selection.start_world.x.max(selection.current_world.x),
+                    selection.start_world.y.max(selection.current_world.y),
+                );
+                let size = max - min;
+                sprite.custom_size = Some(Vec2::new(size.x.abs().max(2.0), size.y.abs().max(2.0)));
+                transform.translation =
+                    Vec3::new((min.x + max.x) * 0.5, (min.y + max.y) * 0.5, 0.5);
             }
         }
     }
@@ -489,10 +502,24 @@ fn handle_selection_input(
     if selection.is_dragging && buttons.just_released(MouseButton::Left) {
         let mut selected = Vec::new();
         let units = queries.p0();
+        let min = Vec2::new(
+            selection.start_world.x.min(selection.current_world.x),
+            selection.start_world.y.min(selection.current_world.y),
+        );
+        let max = Vec2::new(
+            selection.start_world.x.max(selection.current_world.x),
+            selection.start_world.y.max(selection.current_world.y),
+        );
+        let padded_min = min - Vec2::splat(8.0);
+        let padded_max = max + Vec2::splat(8.0);
         for (entity, transform, unit) in units.iter() {
             if unit.player == control.local_player {
                 let pos = transform.translation.truncate();
-                if pos.distance(selection.start_world) <= selection.radius {
+                if pos.x >= padded_min.x
+                    && pos.x <= padded_max.x
+                    && pos.y >= padded_min.y
+                    && pos.y <= padded_max.y
+                {
                     selected.push(entity);
                 }
             }
@@ -501,8 +528,8 @@ fn handle_selection_input(
         selection.selected = selected;
         selection.dirty = true;
         selection.is_dragging = false;
-        selection.radius = 0.0;
-        if let Some(entity) = selection.circle_entity.take() {
+        selection.current_world = selection.start_world;
+        if let Some(entity) = selection.rectangle_entity.take() {
             commands.entity(entity).despawn_recursive();
         }
     }
@@ -619,15 +646,20 @@ fn update_selection_visuals(
     selection.dirty = false;
 }
 
-fn move_units(time: Res<Time>, mut units: Query<(&mut Transform, &Unit)>) {
-    for (mut transform, unit) in units.iter_mut() {
+fn move_units(time: Res<Time>, mut units: Query<(&mut Transform, &mut Unit)>) {
+    let dt = time.delta_secs();
+    let accel = 1.0 - (-UNIT_ACCELERATION * dt).exp();
+    for (mut transform, mut unit) in units.iter_mut() {
         let pos = transform.translation.truncate();
         let delta = unit.rally_target - pos;
-        if delta.length() > 1.0 {
-            let dir = delta.normalize();
-            transform.translation.x += dir.x * UNIT_SPEED * time.delta_secs();
-            transform.translation.y += dir.y * UNIT_SPEED * time.delta_secs();
-        }
+        let desired = if delta.length_squared() > 1.0 {
+            delta.normalize() * UNIT_SPEED
+        } else {
+            Vec2::ZERO
+        };
+        unit.velocity = unit.velocity.lerp(desired, accel);
+        transform.translation.x += unit.velocity.x * dt;
+        transform.translation.y += unit.velocity.y * dt;
     }
 }
 
@@ -651,7 +683,10 @@ fn update_unit_rally_targets(mut units: Query<(Entity, &mut Unit, &Transform)>) 
             }
         }
         if push.length_squared() > 0.0 {
-            unit.rally_target = unit.rally_target + push * 0.5;
+            let push_dir = push.normalize_or_zero();
+            unit.rally_target += push_dir * 5.0;
+            unit.velocity += push_dir * SEPARATION_FORCE;
+            unit.velocity = unit.velocity.clamp_length_max(UNIT_SPEED * 1.5);
         }
     }
 }

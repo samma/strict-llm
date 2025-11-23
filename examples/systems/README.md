@@ -12,7 +12,7 @@ Workflow:
 
 Available sandboxes:
 
-- `rts_board`: square RTS-style board with 2-8 player spawns, periodic reinforcements, and auto-rally logic. Configure via `BOARD_PLAYER_COUNT` / `BOARD_SPAWN_INTERVAL`. Hold the left mouse button to grow a selection circle, release to select nearby units, then right-click to issue move orders (units spread out automatically). Units fire laser pistols at the closest enemies and heal when another friendly unit is nearby.
+- `rts_board`: square RTS-style board with 2-8 player spawns, periodic reinforcements, and auto-rally logic. Configure via `BOARD_PLAYER_COUNT` / `BOARD_SPAWN_INTERVAL`. Drag-select units with the left mouse button (release to confirm) and right-click to issue move orders; formations automatically spread to avoid overlap. Units fire laser pistols at the closest enemies and heal when another friendly unit is nearby.
 
 Nothing inside this directory ships to players; treat it as disposable scaffolding for the LLM collaboration loop.
 
