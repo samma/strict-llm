@@ -1,5 +1,6 @@
 use bevy::input::mouse::MouseButton;
 use bevy::input::ButtonInput;
+use bevy::math::IVec2;
 use bevy::prelude::*;
 use bevy::render::camera::Camera;
 use bevy::time::{Fixed, Time};
@@ -863,25 +864,50 @@ fn unit_combat_system(
     let mut adjacency: HashMap<Entity, Vec<Entity>> = HashMap::default();
     let mut connections: HashMap<Entity, usize> = HashMap::default();
     let mut support_links: Vec<(Entity, Entity)> = Vec::new();
-    for i in 0..snapshot.len() {
-        for j in (i + 1)..snapshot.len() {
-            let (entity_a, player_a, pos_a) = snapshot[i];
-            let (entity_b, player_b, pos_b) = snapshot[j];
-            if player_a != player_b {
-                continue;
-            }
-            if pos_a.distance(pos_b) <= LASER_HEAL_RANGE {
-                connections
-                    .entry(entity_a)
-                    .and_modify(|c| *c += 1)
-                    .or_insert(1);
-                connections
-                    .entry(entity_b)
-                    .and_modify(|c| *c += 1)
-                    .or_insert(1);
-                adjacency.entry(entity_a).or_default().push(entity_b);
-                adjacency.entry(entity_b).or_default().push(entity_a);
-                support_links.push((entity_a, entity_b));
+
+    let cell_size = LASER_HEAL_RANGE;
+    let mut spatial: HashMap<IVec2, Vec<usize>> = HashMap::default();
+    for (idx, (_, _, pos)) in snapshot.iter().enumerate() {
+        spatial
+            .entry(spatial_cell(*pos, cell_size))
+            .or_default()
+            .push(idx);
+    }
+
+    let mut neighbor_offsets = Vec::with_capacity(9);
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            neighbor_offsets.push(IVec2::new(dx, dy));
+        }
+    }
+
+    for (i, &(entity_a, player_a, pos_a)) in snapshot.iter().enumerate() {
+        let cell = spatial_cell(pos_a, cell_size);
+        for offset in &neighbor_offsets {
+            if let Some(indices) = spatial.get(&(cell + *offset)) {
+                for &j in indices {
+                    if j <= i {
+                        continue;
+                    }
+                    let (entity_b, player_b, pos_b) = snapshot[j];
+                    if player_a != player_b {
+                        continue;
+                    }
+                    let delta = pos_a - pos_b;
+                    if delta.length_squared() <= LASER_HEAL_RANGE * LASER_HEAL_RANGE {
+                        connections
+                            .entry(entity_a)
+                            .and_modify(|c| *c += 1)
+                            .or_insert(1);
+                        connections
+                            .entry(entity_b)
+                            .and_modify(|c| *c += 1)
+                            .or_insert(1);
+                        adjacency.entry(entity_a).or_default().push(entity_b);
+                        adjacency.entry(entity_b).or_default().push(entity_a);
+                        support_links.push((entity_a, entity_b));
+                    }
+                }
             }
         }
     }
@@ -1092,6 +1118,13 @@ fn support_link_color(pylon_active: bool) -> Color {
     } else {
         Color::srgb(0.24, 0.98, 0.55)
     }
+}
+
+fn spatial_cell(position: Vec2, cell_size: f32) -> IVec2 {
+    IVec2::new(
+        (position.x / cell_size).floor() as i32,
+        (position.y / cell_size).floor() as i32,
+    )
 }
 
 fn update_beam_effects(
