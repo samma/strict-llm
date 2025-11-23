@@ -1,6 +1,6 @@
 # RTS Board Sandbox
 
-Set `SANDBOX_SCENE=rts_board` (and optionally `BOARD_PLAYER_COUNT`, `BOARD_SPAWN_INTERVAL`, `LOCAL_PLAYER_ID`) before running `cargo run -p game_runner` to focus the prototype. The scene spawns 2-8 players around the edge of the board, gives them two starter units, and adds a new unit every 10 seconds that auto-rallies toward the center of the formation.
+Set `SANDBOX_SCENE=rts_board` (and optionally `BOARD_PLAYER_COUNT`, `BOARD_SPAWN_INTERVAL`, `LOCAL_PLAYER_ID`) before running `cargo run -p game_runner` to focus the prototype. The scene spawns 2-8 players around the edge of the board, gives them two starter units, and adds a new unit every 1 second that auto-rallies toward the center of the formation.
 
 -Controls:
 
