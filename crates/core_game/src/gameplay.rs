@@ -3,8 +3,10 @@ use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use bevy::render::camera::Camera;
 use bevy::time::{Fixed, Time};
+use bevy::utils::{HashMap, HashSet};
 use bevy::window::PrimaryWindow;
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use std::collections::VecDeque;
 use std::f32::consts::TAU;
 use std::ops::RangeInclusive;
 
@@ -24,8 +26,14 @@ const LASER_RANGE: f32 = 260.0;
 const LASER_DAMAGE: f32 = 6.0;
 const LASER_COOLDOWN: f32 = 0.7;
 const LASER_HEAL_RANGE: f32 = 150.0;
-const LASER_HEAL_RATE: f32 = 4.0;
 const BEAM_LIFETIME: f32 = 0.15;
+const SUPPORT_HEAL_PER_SECOND: f32 = 1.0;
+const SUPPORT_DAMAGE_BONUS: f32 = 0.05;
+const PYLON_COUNT: usize = 3;
+const PYLON_RADIUS: f32 = 180.0;
+const PYLON_DAMAGE_BONUS: f32 = 0.04;
+const PYLON_GRAVITY: f32 = 18000.0;
+const PYLON_MAX_SPEED: f32 = 240.0;
 
 const PLAYER_COLORS: [Color; MAX_PLAYERS] = [
     Color::srgb(0.93, 0.26, 0.28),
@@ -67,7 +75,11 @@ impl Plugin for GameplayPlugin {
             .add_systems(Startup, configure_fixed_time)
             .add_systems(
                 Startup,
-                (setup_board, spawn_initial_units.after(setup_board)),
+                (
+                    setup_board,
+                    spawn_initial_units.after(setup_board),
+                    spawn_pylons.after(setup_board),
+                ),
             )
             .add_systems(
                 FixedUpdate,
@@ -85,6 +97,7 @@ impl Plugin for GameplayPlugin {
                     update_selection_visuals.after(handle_selection_input),
                     issue_move_orders.after(update_selection_visuals),
                     update_beam_effects,
+                    animate_pylons,
                 ),
             );
     }
@@ -274,6 +287,8 @@ pub struct Unit {
     pub max_health: f32,
     pub attack_timer: Timer,
     pub velocity: Vec2,
+    pub base_color: Color,
+    pub boost_visual: Option<Entity>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -301,6 +316,12 @@ struct SelectionRect;
 #[derive(Component)]
 struct SelectionHighlight {
     glow: Entity,
+}
+
+#[derive(Component)]
+struct Pylon {
+    velocity: Vec2,
+    mass: f32,
 }
 
 #[derive(Component)]
@@ -370,6 +391,92 @@ fn spawn_initial_units(
     commands.insert_resource(timers);
 }
 
+fn spawn_pylons(
+    mut commands: Commands,
+    settings: Res<BoardSettings>,
+    mut rng: ResMut<SimulationRng>,
+) {
+    for idx in 0..PYLON_COUNT {
+        let radius = settings.board_size * (0.15 + rng.gen_f32(0.0..=0.15));
+        let angle = rng.gen_f32(0.0..=TAU);
+        let position = Vec2::new(angle.cos(), angle.sin()) * radius;
+        let speed = rng.gen_f32(20.0..=60.0);
+        let velocity = Vec2::new(-angle.sin(), angle.cos()) * speed;
+        let color = Color::srgb(0.4, 0.85, 1.0);
+        commands.spawn((
+            Sprite {
+                color,
+                custom_size: Some(Vec2::new(26.0, 38.0)),
+                ..default()
+            },
+            Transform {
+                translation: Vec3::new(position.x, position.y, 0.2 + idx as f32 * 0.01),
+                rotation: Quat::from_rotation_z(std::f32::consts::FRAC_PI_4),
+                ..default()
+            },
+            Pylon {
+                velocity,
+                mass: 1.0 + rng.gen_f32(0.0..=1.0),
+            },
+        ));
+    }
+}
+
+fn animate_pylons(
+    time: Res<Time>,
+    settings: Res<BoardSettings>,
+    mut pylons: Query<(Entity, &mut Transform, &mut Pylon)>,
+) {
+    let dt = time.delta_secs();
+    if pylons.is_empty() {
+        return;
+    }
+    let snapshots: Vec<(Entity, Vec2, Vec2, f32)> = pylons
+        .iter()
+        .map(|(entity, transform, pylon)| {
+            (
+                entity,
+                transform.translation.truncate(),
+                pylon.velocity,
+                pylon.mass,
+            )
+        })
+        .collect();
+
+    let mut accelerations: HashMap<Entity, Vec2> = HashMap::default();
+    for (entity_a, pos_a, _, _) in &snapshots {
+        let mut acc = Vec2::ZERO;
+        for (entity_b, pos_b, _, mass_b) in &snapshots {
+            if entity_a == entity_b {
+                continue;
+            }
+            let offset = *pos_b - *pos_a;
+            let dist_sq = offset.length_squared().max(4000.0);
+            acc += offset.normalize() * (PYLON_GRAVITY * *mass_b / dist_sq);
+        }
+        accelerations.insert(*entity_a, acc);
+    }
+
+    let boundary = settings.board_size * 0.45;
+    for (entity, mut transform, mut pylon) in pylons.iter_mut() {
+        if let Some(acc) = accelerations.get(&entity) {
+            pylon.velocity += *acc * dt;
+        }
+        pylon.velocity = pylon.velocity.clamp_length_max(PYLON_MAX_SPEED);
+        transform.translation.x += pylon.velocity.x * dt;
+        transform.translation.y += pylon.velocity.y * dt;
+        if transform.translation.x.abs() > boundary {
+            transform.translation.x = transform.translation.x.clamp(-boundary, boundary);
+            pylon.velocity.x = -pylon.velocity.x;
+        }
+        if transform.translation.y.abs() > boundary {
+            transform.translation.y = transform.translation.y.clamp(-boundary, boundary);
+            pylon.velocity.y = -pylon.velocity.y;
+        }
+        transform.translation.z = 0.2;
+    }
+}
+
 fn spawn_unit(
     commands: &mut Commands,
     player: PlayerId,
@@ -395,6 +502,8 @@ fn spawn_unit(
                 TimerMode::Repeating,
             ),
             velocity: Vec2::ZERO,
+            base_color: color,
+            boost_visual: None,
         },
     ));
 }
@@ -500,7 +609,6 @@ fn handle_selection_input(
     }
 
     if selection.is_dragging && buttons.just_released(MouseButton::Left) {
-        let mut selected = Vec::new();
         let units = queries.p0();
         let min = Vec2::new(
             selection.start_world.x.min(selection.current_world.x),
@@ -512,6 +620,7 @@ fn handle_selection_input(
         );
         let padded_min = min - Vec2::splat(8.0);
         let padded_max = max + Vec2::splat(8.0);
+        let mut newly_selected = Vec::new();
         for (entity, transform, unit) in units.iter() {
             if unit.player == control.local_player {
                 let pos = transform.translation.truncate();
@@ -520,12 +629,23 @@ fn handle_selection_input(
                     && pos.y >= padded_min.y
                     && pos.y <= padded_max.y
                 {
-                    selected.push(entity);
+                    newly_selected.push(entity);
                 }
             }
         }
+
+        let drag_delta = selection.current_world - selection.start_world;
+        let is_click = drag_delta.length_squared() < 16.0;
         selection.prev_selected = std::mem::take(&mut selection.selected);
-        selection.selected = selected;
+        if is_click && newly_selected.is_empty() {
+            selection.selected.clear();
+        } else {
+            let mut set: HashSet<Entity> = selection.prev_selected.iter().copied().collect();
+            for entity in newly_selected {
+                set.insert(entity);
+            }
+            selection.selected = set.into_iter().collect();
+        }
         selection.dirty = true;
         selection.is_dragging = false;
         selection.current_world = selection.start_world;
@@ -646,6 +766,30 @@ fn update_selection_visuals(
     selection.dirty = false;
 }
 
+fn update_boost_visual(entity: Entity, unit: &mut Unit, active: bool, commands: &mut Commands) {
+    if active {
+        if unit.boost_visual.is_some() {
+            return;
+        }
+        let glow = commands
+            .spawn((
+                Sprite {
+                    color: Color::srgba(0.98, 0.95, 0.45, 0.2),
+                    custom_size: Some(Vec2::splat(40.0)),
+                    ..default()
+                },
+                Transform::from_xyz(0.0, 0.0, -0.05),
+            ))
+            .id();
+        commands.entity(entity).add_child(glow);
+        unit.boost_visual = Some(glow);
+    } else if let Some(glow) = unit.boost_visual.take() {
+        if let Some(cmds) = commands.get_entity(glow) {
+            cmds.despawn_recursive();
+        }
+    }
+}
+
 fn move_units(time: Res<Time>, mut units: Query<(&mut Transform, &mut Unit)>) {
     let dt = time.delta_secs();
     let accel = 1.0 - (-UNIT_ACCELERATION * dt).exp();
@@ -693,41 +837,141 @@ fn update_unit_rally_targets(mut units: Query<(Entity, &mut Unit, &Transform)>) 
 
 fn unit_combat_system(
     time: Res<Time>,
+    spawn_registry: Res<SpawnRegistry>,
+    pylons: Query<&Transform, (With<Pylon>, Without<Unit>)>,
     mut commands: Commands,
-    mut units: Query<(Entity, &Transform, &mut Unit)>,
+    mut unit_queries: ParamSet<(
+        Query<(Entity, &Transform, &Unit)>,
+        Query<(Entity, &mut Transform, &mut Sprite, &mut Unit)>,
+    )>,
 ) {
-    let snapshot: Vec<_> = units
+    let snapshot: Vec<_> = {
+        let query = unit_queries.p0();
+        query
+            .iter()
+            .map(|(entity, transform, unit)| {
+                (entity, unit.player, transform.translation.truncate())
+            })
+            .collect()
+    };
+
+    let mut entity_info: HashMap<Entity, (PlayerId, Vec2)> = HashMap::default();
+    for (entity, player, pos) in &snapshot {
+        entity_info.insert(*entity, (*player, *pos));
+    }
+
+    let mut adjacency: HashMap<Entity, Vec<Entity>> = HashMap::default();
+    let mut connections: HashMap<Entity, usize> = HashMap::default();
+    let mut support_links: Vec<(Entity, Entity)> = Vec::new();
+    for i in 0..snapshot.len() {
+        for j in (i + 1)..snapshot.len() {
+            let (entity_a, player_a, pos_a) = snapshot[i];
+            let (entity_b, player_b, pos_b) = snapshot[j];
+            if player_a != player_b {
+                continue;
+            }
+            if pos_a.distance(pos_b) <= LASER_HEAL_RANGE {
+                connections
+                    .entry(entity_a)
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+                connections
+                    .entry(entity_b)
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+                adjacency.entry(entity_a).or_default().push(entity_b);
+                adjacency.entry(entity_b).or_default().push(entity_a);
+                support_links.push((entity_a, entity_b));
+            }
+        }
+    }
+
+    let mut connected_entities: HashSet<Entity> = HashSet::default();
+    let mut supply_components: Vec<Vec<Entity>> = Vec::new();
+    for entry in spawn_registry.entries.iter() {
+        let mut queue = VecDeque::new();
+        let mut component = Vec::new();
+        for (entity, _player, pos) in snapshot
+            .iter()
+            .filter(|(_, player, _)| *player == entry.player)
+        {
+            if pos.distance(entry.position) <= LASER_HEAL_RANGE {
+                if connected_entities.insert(*entity) {
+                    queue.push_back(*entity);
+                    component.push(*entity);
+                }
+            }
+        }
+        while let Some(current) = queue.pop_front() {
+            if let Some(neighbors) = adjacency.get(&current) {
+                for &neighbor in neighbors {
+                    if entity_info
+                        .get(&neighbor)
+                        .map(|(player, _)| *player == entry.player)
+                        .unwrap_or(false)
+                    {
+                        if connected_entities.insert(neighbor) {
+                            queue.push_back(neighbor);
+                            component.push(neighbor);
+                        }
+                    }
+                }
+            }
+        }
+        if !component.is_empty() {
+            supply_components.push(component);
+        }
+    }
+
+    let pylon_positions: Vec<Vec2> = pylons
         .iter()
-        .map(|(entity, transform, unit)| (entity, unit.player, transform.translation.truncate()))
+        .map(|transform| transform.translation.truncate())
         .collect();
 
+    let mut component_bonus: HashMap<Entity, f32> = HashMap::default();
+    let mut component_pylon_active: HashSet<Entity> = HashSet::default();
+    for component in supply_components {
+        let mut bonus = 0.0;
+        let mut component_has_pylon = false;
+        for entity in &component {
+            if let Some((_, pos)) = entity_info.get(entity) {
+                if pylon_positions
+                    .iter()
+                    .any(|pylon_pos| pos.distance(*pylon_pos) <= PYLON_RADIUS)
+                {
+                    bonus += PYLON_DAMAGE_BONUS;
+                    component_has_pylon = true;
+                }
+            }
+        }
+        for entity in component.iter().copied() {
+            component_bonus.insert(entity, bonus);
+            if component_has_pylon {
+                component_pylon_active.insert(entity);
+            }
+        }
+    }
+
+    let delta = time.delta();
+    let delta_secs = delta.as_secs_f32();
     let mut damage_events: Vec<(Entity, f32)> = Vec::new();
-    let mut heal_events: Vec<(Entity, f32)> = Vec::new();
     let mut deaths: Vec<Entity> = Vec::new();
     let mut beams: Vec<(Vec2, Vec2, Color, f32)> = Vec::new();
 
-    for (entity, transform, mut unit) in units.iter_mut() {
-        unit.attack_timer.tick(time.delta());
+    let mut unit_write = unit_queries.p1();
+    for (entity, mut transform, mut sprite, mut unit) in unit_write.iter_mut() {
+        unit.attack_timer.tick(delta);
+        let connection_count = connections.get(&entity).copied().unwrap_or(0);
+        let boost_active = connected_entities.contains(&entity);
+        let pylon_bonus = component_bonus.get(&entity).copied().unwrap_or(0.0);
+        update_boost_visual(entity, &mut unit, boost_active, &mut commands);
+        let scale = if boost_active { 1.12 } else { 1.0 };
+        transform.scale = Vec3::new(scale, scale, 1.0);
+        sprite.color = unit.base_color;
 
-        // Healing pulse
-        if unit.health < unit.max_health {
-            if let Some(ally_pos) = snapshot
-                .iter()
-                .filter(|(other_entity, player, _)| {
-                    *player == unit.player && *other_entity != entity
-                })
-                .map(|(_, _, pos)| *pos)
-                .find(|pos| pos.distance(transform.translation.truncate()) <= LASER_HEAL_RANGE)
-            {
-                let heal_amount = LASER_HEAL_RATE * time.delta_secs();
-                heal_events.push((entity, heal_amount));
-                beams.push((
-                    transform.translation.truncate(),
-                    ally_pos,
-                    Color::srgb(0.2, 1.0, 0.4),
-                    6.0,
-                ));
-            }
+        if boost_active && connection_count > 0 && unit.health < unit.max_health {
+            let heal_amount = connection_count as f32 * SUPPORT_HEAL_PER_SECOND * delta_secs;
+            unit.health = (unit.health + heal_amount).min(unit.max_health);
         }
 
         // Attack
@@ -743,7 +987,12 @@ fn unit_combat_system(
         {
             let distance = target_pos.distance(transform.translation.truncate());
             if distance <= LASER_RANGE && unit.attack_timer.finished() {
-                damage_events.push((target_entity, LASER_DAMAGE));
+                let mut damage_multiplier = 1.0;
+                if boost_active {
+                    damage_multiplier += connection_count as f32 * SUPPORT_DAMAGE_BONUS;
+                    damage_multiplier += pylon_bonus;
+                }
+                damage_events.push((target_entity, LASER_DAMAGE * damage_multiplier));
                 beams.push((
                     transform.translation.truncate(),
                     target_pos,
@@ -758,19 +1007,38 @@ fn unit_combat_system(
         }
     }
 
-    for (entity, amount) in heal_events {
-        if let Ok((_, _, mut unit)) = units.get_mut(entity) {
-            unit.health = (unit.health + amount).min(unit.max_health);
-        }
-    }
-
     for (entity, amount) in damage_events {
-        if let Ok((_, _, mut unit)) = units.get_mut(entity) {
+        if let Ok((_, _, _, mut unit)) = unit_write.get_mut(entity) {
             unit.health -= amount;
             if unit.health <= 0.0 {
                 deaths.push(entity);
             }
         }
+    }
+
+    let mut pylon_energy_links: Vec<(Vec2, Vec2)> = Vec::new();
+    for pylon_pos in &pylon_positions {
+        for (entity, (_, unit_pos)) in entity_info.iter() {
+            if !component_pylon_active.contains(entity) {
+                continue;
+            }
+            if unit_pos.distance(*pylon_pos) <= PYLON_RADIUS {
+                pylon_energy_links.push((*pylon_pos, *unit_pos));
+            }
+        }
+    }
+
+    for (entity_a, entity_b) in support_links {
+        let Some((_, pos_a)) = entity_info.get(&entity_a) else {
+            continue;
+        };
+        let Some((_, pos_b)) = entity_info.get(&entity_b) else {
+            continue;
+        };
+        let pylon_active = component_pylon_active.contains(&entity_a)
+            || component_pylon_active.contains(&entity_b);
+        let color = support_link_color(pylon_active);
+        spawn_support_link(&mut commands, *pos_a, *pos_b, color);
     }
 
     for entity in deaths {
@@ -779,6 +1047,15 @@ fn unit_combat_system(
 
     for (start, end, color, thickness) in beams {
         spawn_beam(&mut commands, start, end, color, thickness);
+    }
+
+    for (pylon_pos, unit_pos) in pylon_energy_links {
+        spawn_support_link(
+            &mut commands,
+            pylon_pos,
+            unit_pos,
+            Color::srgb(0.2, 0.7, 1.0),
+        );
     }
 }
 
@@ -802,6 +1079,19 @@ fn spawn_beam(commands: &mut Commands, start: Vec2, end: Vec2, color: Color, thi
             timer: Timer::from_seconds(BEAM_LIFETIME, TimerMode::Once),
         },
     ));
+}
+
+fn spawn_support_link(commands: &mut Commands, start: Vec2, end: Vec2, color: Color) {
+    spawn_beam(commands, start, end, color.with_alpha(0.85), 2.6);
+    spawn_beam(commands, start, end, color.with_alpha(0.3), 4.4);
+}
+
+fn support_link_color(pylon_active: bool) -> Color {
+    if pylon_active {
+        Color::srgb(0.22, 0.8, 0.95)
+    } else {
+        Color::srgb(0.24, 0.98, 0.55)
+    }
 }
 
 fn update_beam_effects(

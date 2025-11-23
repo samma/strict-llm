@@ -12,7 +12,7 @@ Workflow:
 
 Available sandboxes:
 
-- `rts_board`: square RTS-style board with 2-8 player spawns, periodic reinforcements, and auto-rally logic. Configure via `BOARD_PLAYER_COUNT` / `BOARD_SPAWN_INTERVAL`. Drag-select units with the left mouse button (release to confirm) and right-click to issue move orders; formations automatically spread to avoid overlap. Units fire laser pistols at the closest enemies and heal when another friendly unit is nearby.
+- `rts_board`: square RTS-style board with 2-8 player spawns, periodic reinforcements, and auto-rally logic. Configure via `BOARD_PLAYER_COUNT` / `BOARD_SPAWN_INTERVAL`. Drag-select units with the left mouse button (release to confirm) and right-click to issue move orders; formations automatically spread to avoid overlap. Units fire laser pistols at the closest enemies and, when clustered, project supply links that provide +1 HP/s regen and stackable +5% damage per connection—buffs stay active only if the linked network reaches the player’s spawn marker. Three drifting pylons wander the arena following a three-body orbit; any supply-connected unit standing near a pylon grants an extra +4% damage boost to its entire network.
 
 Nothing inside this directory ships to players; treat it as disposable scaffolding for the LLM collaboration loop.
 

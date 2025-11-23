@@ -41,7 +41,7 @@ CI mirrors these commands; never introduce bespoke scripts without updating the 
 - Keep `rust-analyzer.cargo.features = ["native", "wasm"]` so edits are validated for both targets.
 - Determinism knobs: override `SIMULATION_SEED=<u64>` and `SIMULATION_FIXED_DT=<seconds>` to reproduce or speed up fixed-step simulations. CI sticks to the defaults defined in `core_game::gameplay::SimulationParams`.
 - RTS sandbox knobs: `BOARD_PLAYER_COUNT` (2-8), `BOARD_SPAWN_INTERVAL` (seconds), `BOARD_SIZE` (float). Setting `SANDBOX_SCENE=rts_board` applies sandbox defaults automatically.
-- Mouse controls (rts_board): click-drag with the left mouse button to draw a selection rectangle around friendly units (release to confirm), right-click to issue move orders (units spread out SC2-style). Units auto-fire laser pistols at the nearest enemies and heal when another friendly unit is nearby. `LOCAL_PLAYER_ID=<idx>` chooses which spawn responds to input.
+- Mouse controls (rts_board): click-drag with the left mouse button to draw a selection rectangle around friendly units (release to confirm), right-click to issue move orders (units spread out SC2-style). Friendly units emit continuous support links whenever they’re close—each connection grants +1 HP/s regen and +5% laser damage so long as the beam network stays connected back to the player’s spawn marker (the “supply line”). If any unit in that supply network is within ~180 units of a roaming pylon, the entire network gains an extra +4% damage per powered unit. `LOCAL_PLAYER_ID=<idx>` chooses which spawn responds to input.
 
 ## 5. Hot Reload & Asset Flow
 
