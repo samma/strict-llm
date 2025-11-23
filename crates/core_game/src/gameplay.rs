@@ -72,6 +72,8 @@ impl Plugin for GameplayPlugin {
         }
 
         app.init_resource::<SimulationRng>()
+            .init_resource::<SupportLinkBuffer>()
+            .init_resource::<SupportLinkPool>()
             .init_resource::<SelectionState>()
             .add_systems(Startup, configure_fixed_time)
             .add_systems(
@@ -89,6 +91,7 @@ impl Plugin for GameplayPlugin {
                     move_units,
                     update_unit_rally_targets,
                     unit_combat_system.after(move_units),
+                    render_support_links.after(unit_combat_system),
                 ),
             )
             .add_systems(
@@ -330,6 +333,26 @@ struct BeamEffect {
     timer: Timer,
 }
 
+#[derive(Component)]
+struct SupportLinkVisual;
+
+#[derive(Clone)]
+struct SupportLinkRenderable {
+    start: Vec2,
+    end: Vec2,
+    color: Color,
+    thickness: f32,
+}
+
+#[derive(Resource, Default)]
+struct SupportLinkBuffer {
+    links: Vec<SupportLinkRenderable>,
+}
+
+#[derive(Resource, Default)]
+struct SupportLinkPool {
+    entities: Vec<Entity>,
+}
 fn setup_board(mut commands: Commands, settings: Res<BoardSettings>) {
     commands.spawn((
         Sprite {
@@ -840,12 +863,15 @@ fn unit_combat_system(
     time: Res<Time>,
     spawn_registry: Res<SpawnRegistry>,
     pylons: Query<&Transform, (With<Pylon>, Without<Unit>)>,
+    mut link_buffer: ResMut<SupportLinkBuffer>,
     mut commands: Commands,
     mut unit_queries: ParamSet<(
         Query<(Entity, &Transform, &Unit)>,
         Query<(Entity, &mut Transform, &mut Sprite, &mut Unit)>,
     )>,
 ) {
+    link_buffer.links.clear();
+
     let snapshot: Vec<_> = {
         let query = unit_queries.p0();
         query
@@ -958,23 +984,33 @@ fn unit_combat_system(
     let mut component_pylon_active: HashSet<Entity> = HashSet::default();
     for component in supply_components {
         let mut bonus = 0.0;
-        let mut component_has_pylon = false;
+        let mut component_powered_pairs = Vec::new();
         for entity in &component {
             if let Some((_, pos)) = entity_info.get(entity) {
-                if pylon_positions
-                    .iter()
-                    .any(|pylon_pos| pos.distance(*pylon_pos) <= PYLON_RADIUS)
-                {
-                    bonus += PYLON_DAMAGE_BONUS;
-                    component_has_pylon = true;
+                for pylon_pos in &pylon_positions {
+                    if pos.distance(*pylon_pos) <= PYLON_RADIUS {
+                        bonus += PYLON_DAMAGE_BONUS;
+                        component_powered_pairs.push((*pylon_pos, *pos));
+                        break;
+                    }
                 }
+            }
+        }
+        if !component_powered_pairs.is_empty() {
+            for (pylon_pos, unit_pos) in component_powered_pairs {
+                emit_support_link(
+                    &mut link_buffer.links,
+                    pylon_pos,
+                    unit_pos,
+                    Color::srgb(0.2, 0.7, 1.0),
+                );
+            }
+            for entity in component.iter().copied() {
+                component_pylon_active.insert(entity);
             }
         }
         for entity in component.iter().copied() {
             component_bonus.insert(entity, bonus);
-            if component_has_pylon {
-                component_pylon_active.insert(entity);
-            }
         }
     }
 
@@ -1042,18 +1078,6 @@ fn unit_combat_system(
         }
     }
 
-    let mut pylon_energy_links: Vec<(Vec2, Vec2)> = Vec::new();
-    for pylon_pos in &pylon_positions {
-        for (entity, (_, unit_pos)) in entity_info.iter() {
-            if !component_pylon_active.contains(entity) {
-                continue;
-            }
-            if unit_pos.distance(*pylon_pos) <= PYLON_RADIUS {
-                pylon_energy_links.push((*pylon_pos, *unit_pos));
-            }
-        }
-    }
-
     for (entity_a, entity_b) in support_links {
         let Some((_, pos_a)) = entity_info.get(&entity_a) else {
             continue;
@@ -1064,7 +1088,7 @@ fn unit_combat_system(
         let pylon_active = component_pylon_active.contains(&entity_a)
             || component_pylon_active.contains(&entity_b);
         let color = support_link_color(pylon_active);
-        spawn_support_link(&mut commands, *pos_a, *pos_b, color);
+        emit_support_link(&mut link_buffer.links, *pos_a, *pos_b, color);
     }
 
     for entity in deaths {
@@ -1073,15 +1097,6 @@ fn unit_combat_system(
 
     for (start, end, color, thickness) in beams {
         spawn_beam(&mut commands, start, end, color, thickness);
-    }
-
-    for (pylon_pos, unit_pos) in pylon_energy_links {
-        spawn_support_link(
-            &mut commands,
-            pylon_pos,
-            unit_pos,
-            Color::srgb(0.2, 0.7, 1.0),
-        );
     }
 }
 
@@ -1107,11 +1122,6 @@ fn spawn_beam(commands: &mut Commands, start: Vec2, end: Vec2, color: Color, thi
     ));
 }
 
-fn spawn_support_link(commands: &mut Commands, start: Vec2, end: Vec2, color: Color) {
-    spawn_beam(commands, start, end, color.with_alpha(0.85), 2.6);
-    spawn_beam(commands, start, end, color.with_alpha(0.3), 4.4);
-}
-
 fn support_link_color(pylon_active: bool) -> Color {
     if pylon_active {
         Color::srgb(0.22, 0.8, 0.95)
@@ -1125,6 +1135,99 @@ fn spatial_cell(position: Vec2, cell_size: f32) -> IVec2 {
         (position.x / cell_size).floor() as i32,
         (position.y / cell_size).floor() as i32,
     )
+}
+
+fn emit_support_link(
+    buffer: &mut Vec<SupportLinkRenderable>,
+    start: Vec2,
+    end: Vec2,
+    color: Color,
+) {
+    buffer.push(SupportLinkRenderable {
+        start,
+        end,
+        color: color.with_alpha(0.85),
+        thickness: 2.6,
+    });
+    buffer.push(SupportLinkRenderable {
+        start,
+        end,
+        color: color.with_alpha(0.3),
+        thickness: 4.4,
+    });
+}
+
+fn render_support_links(
+    mut commands: Commands,
+    buffer: Res<SupportLinkBuffer>,
+    mut pool: ResMut<SupportLinkPool>,
+    mut visuals: Query<(&mut Transform, &mut Sprite, &mut Visibility), With<SupportLinkVisual>>,
+) {
+    for (idx, link) in buffer.links.iter().enumerate() {
+        if idx >= pool.entities.len() {
+            let entity = spawn_link_visual(&mut commands, link);
+            pool.entities.push(entity);
+            continue;
+        }
+
+        let entity = pool.entities[idx];
+        if let Ok((mut transform, mut sprite, mut visibility)) = visuals.get_mut(entity) {
+            configure_link_visual(&mut transform, &mut sprite, &mut visibility, link);
+        } else {
+            let entity = spawn_link_visual(&mut commands, link);
+            pool.entities[idx] = entity;
+        }
+    }
+
+    for idx in buffer.links.len()..pool.entities.len() {
+        if let Ok((_, _, mut visibility)) = visuals.get_mut(pool.entities[idx]) {
+            *visibility = Visibility::Hidden;
+        }
+    }
+}
+
+#[allow(deprecated)]
+fn spawn_link_visual(commands: &mut Commands, link: &SupportLinkRenderable) -> Entity {
+    let diff = link.end - link.start;
+    let length = diff.length().max(1.0);
+    let midpoint = (link.start + link.end) * 0.5;
+    let angle = diff.y.atan2(diff.x);
+    commands
+        .spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: link.color,
+                    custom_size: Some(Vec2::new(length, link.thickness)),
+                    ..default()
+                },
+                transform: Transform {
+                    translation: Vec3::new(midpoint.x, midpoint.y, 0.6),
+                    rotation: Quat::from_rotation_z(angle),
+                    ..default()
+                },
+                ..default()
+            },
+            SupportLinkVisual,
+        ))
+        .id()
+}
+
+fn configure_link_visual(
+    transform: &mut Transform,
+    sprite: &mut Sprite,
+    visibility: &mut Visibility,
+    link: &SupportLinkRenderable,
+) {
+    let diff = link.end - link.start;
+    let length = diff.length().max(1.0);
+    let midpoint = (link.start + link.end) * 0.5;
+    let angle = diff.y.atan2(diff.x);
+    transform.translation = Vec3::new(midpoint.x, midpoint.y, 0.6);
+    transform.rotation = Quat::from_rotation_z(angle);
+    transform.scale = Vec3::ONE;
+    sprite.custom_size = Some(Vec2::new(length, link.thickness));
+    sprite.color = link.color;
+    *visibility = Visibility::Visible;
 }
 
 fn update_beam_effects(
