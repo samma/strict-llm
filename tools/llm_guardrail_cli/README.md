@@ -15,7 +15,7 @@ cargo run -p guardrail_cli -- <command> ...
 | Command | Example | Description |
 | --- | --- | --- |
 | `ingest` | `cargo run -p guardrail_cli -- ingest --prompt .llm_logs/incoming/prompt.md --response .llm_logs/incoming/response.md --diff .llm_logs/incoming/patch.diff --out-dir .llm_logs/pr-42` | Copies prompt/response/diff artifacts into a canonical folder and records metadata for later audits. |
-| `validate` | `cargo run -p guardrail_cli -- validate --config tools/llm_guardrail_cli/guardrail.example.toml --id pr-42-attempt-1` | Runs analyzers configured in the TOML file (fmt, clippy, deterministic seed scan) and prints a JSON report. If the config specifies `report.path`, the report is also written to disk. |
+| `validate` | `cargo run -p guardrail_cli -- validate --config tools/llm_guardrail_cli/guardrail.example.toml --id pr-42-attempt-1` | Runs analyzers configured in the TOML file (fmt, clippy, deterministic seed scan, Bevy sandbox checks) and prints a JSON report. If the config specifies `report.path`, the report is also written to disk. |
 | `report` | `cargo run -p guardrail_cli -- report --input reports/pr-42-attempt-1.json` | Reads an existing report (see `report_schema.json`) and prints a concise summary. Useful for CI log output or quick local checks. |
 
 ## Configuration
@@ -23,7 +23,7 @@ cargo run -p guardrail_cli -- <command> ...
 `tools/llm_guardrail_cli/guardrail.example.toml` demonstrates the available settings:
 
 - `sources.*` — relative paths to the prompt/response/diff that triggered the run.
-- `analyzers` — enable/disable `fmt`, `clippy`, and `deterministic_seed_scan`.
+- `analyzers` — enable/disable `fmt`, `clippy`, `deterministic_seed_scan`, and `bevy_sandbox_checks`.
 - `report.path` — optional output path for the generated JSON. Set `include_logs = true` when CI should capture analyzer logs too.
 
 Extend the config as new analyzers land (e.g., Bevy schedule inspector) by adding toggles and hooking them into `guardrail_core::analyzers`.

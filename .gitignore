@@ -10,6 +10,7 @@
 # Assets
 /assets/
 /assets_src/cache/
+/web/pkg/
 
 # Misc
 *.log

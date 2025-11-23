@@ -10,4 +10,6 @@ serde_json.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+bevy.workspace = true
+core_game = { path = "../core_game" }
 

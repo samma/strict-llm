@@ -22,6 +22,7 @@ crates/llm_regression/
 3. Ensure required dev-dependencies (`rand`, `serde_json`, `insta`) cover the assertions.
 4. Store golden artifacts (JSON traces, PNG frames, logs) under `golden/<feature>/`.
 5. Update `docs/validation-matrix.md` when the scenario maps to a new checklist row.
+6. For Bevy-powered systems, follow the pattern in `tests/deterministic_health.rs` (headless `MinimalPlugins` + `ScheduleRunnerPlugin`) to keep runs deterministic.
 
 ## Running Tests
 

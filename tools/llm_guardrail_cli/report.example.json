@@ -41,6 +41,11 @@
       "log_path": "reports/pr-42-attempt-1/determinism.log"
     },
     {
+      "name": "bevy_sandbox_checks",
+      "status": "pass",
+      "details": "FixedUpdate + sandbox wiring detected"
+    },
+    {
       "name": "unsafe_audit",
       "status": "skipped",
       "details": "No unsafe blocks detected."

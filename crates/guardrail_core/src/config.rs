@@ -70,6 +70,8 @@ pub struct AnalyzerToggles {
     pub clippy: Option<bool>,
     #[serde(default)]
     pub deterministic: Option<bool>,
+    #[serde(default)]
+    pub bevy: Option<bool>,
 }
 
 impl AnalyzerToggles {
@@ -81,6 +83,9 @@ impl AnalyzerToggles {
     }
     pub fn deterministic_enabled(&self) -> bool {
         self.deterministic.unwrap_or(true)
+    }
+    pub fn bevy_enabled(&self) -> bool {
+        self.bevy.unwrap_or(true)
     }
 }
 

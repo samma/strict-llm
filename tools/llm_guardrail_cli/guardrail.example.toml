@@ -13,6 +13,7 @@ checklist_refs = ["docs/validation-matrix.md#core-loop"]
 fmt = true
 clippy = true
 deterministic = true
+bevy = true
 
 [report]
 path = "reports/latest.json"

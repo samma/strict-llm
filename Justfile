@@ -18,7 +18,7 @@ build-native:
 
 # WebAssembly build (assumes wasm32 target installed)
 build-wasm:
-    cargo build --target wasm32-unknown-unknown --all-features
+    pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/build_wasm.ps1
 
 # Asset validation placeholder
 asset-validate:

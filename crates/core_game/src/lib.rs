@@ -1,36 +1,25 @@
-//! Core game placeholder logic.
+//! Core Bevy game plugin composed of gameplay, UI, and diagnostics modules.
 
-use tracing::info;
+pub mod diagnostics;
+pub mod gameplay;
+pub mod ui;
 
-/// Basic health tracker to serve as an integration anchor.
-pub struct Health {
-    current: u32,
-    max: u32,
-}
+use bevy::ecs::schedule::ScheduleLabel;
+use bevy::prelude::*;
 
-impl Health {
-    pub fn new(max: u32) -> Self {
-        Self { current: max, max }
-    }
+/// Schedule dedicated to deterministic simulation. Rendering hooks
+/// run in the default `Update`/`PostUpdate` stages.
+#[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone)]
+pub struct SimulationSchedule;
 
-    pub fn damage(&mut self, amount: u32) {
-        self.current = self.current.saturating_sub(amount);
-        info!(target: "core_game.health", current = self.current, max = self.max, "health updated");
-    }
+pub struct CoreGamePlugin;
 
-    pub fn current(&self) -> u32 {
-        self.current
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn damage_clamps_to_zero() {
-        let mut hp = Health::new(10);
-        hp.damage(15);
-        assert_eq!(0, hp.current());
+impl Plugin for CoreGamePlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins((
+            gameplay::GameplayPlugin,
+            ui::UiPlugin,
+            diagnostics::DiagnosticsPlugin,
+        ));
     }
 }

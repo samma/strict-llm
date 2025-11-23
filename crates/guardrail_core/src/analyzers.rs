@@ -39,6 +39,10 @@ pub fn run_validations(
         checks.push(run_deterministic_scan(&options.workspace_root)?);
     }
 
+    if toggles.bevy_enabled() {
+        checks.push(run_bevy_checks(&options.workspace_root)?);
+    }
+
     let report = GuardrailReport::new(
         options.run_id.clone(),
         config.source_info(),
@@ -149,6 +153,55 @@ fn run_deterministic_scan(workspace_root: &Path) -> Result<CheckResult> {
             log_path: None,
         })
     }
+}
+
+fn run_bevy_checks(workspace_root: &Path) -> Result<CheckResult> {
+    let gameplay_dir = workspace_root.join("crates").join("core_game").join("src");
+    let runner_dir = workspace_root
+        .join("crates")
+        .join("game_runner")
+        .join("src");
+
+    let mut missing = Vec::new();
+    if !dir_contains_token(&gameplay_dir, "FixedUpdate") {
+        missing.push("core_game missing FixedUpdate usage");
+    }
+    if !dir_contains_token(&gameplay_dir, "SimulationParams") {
+        missing.push("SimulationParams not referenced in core_game");
+    }
+    if !dir_contains_token(&runner_dir, "SandboxPlugin") {
+        missing.push("SandboxPlugin not registered in game_runner");
+    }
+
+    if missing.is_empty() {
+        Ok(CheckResult {
+            name: "bevy_sandbox_checks".into(),
+            status: CheckStatus::Pass,
+            details: "FixedUpdate + sandbox wiring detected".into(),
+            log_path: None,
+        })
+    } else {
+        Ok(CheckResult {
+            name: "bevy_sandbox_checks".into(),
+            status: CheckStatus::Fail,
+            details: missing.join("\n"),
+            log_path: None,
+        })
+    }
+}
+
+fn dir_contains_token(dir: &Path, token: &str) -> bool {
+    for entry in WalkDir::new(dir).into_iter().flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "rs") {
+            if let Ok(contents) = std::fs::read_to_string(path) {
+                if contents.contains(token) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn filter_entry(path: &Path) -> bool {

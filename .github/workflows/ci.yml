@@ -50,8 +50,18 @@ jobs:
       - name: Guardrail validation
         run: cargo run -p guardrail_cli -- validate --config tools/llm_guardrail_cli/guardrail.example.toml --id ci
 
+      - name: Headless Bevy regression
+        run: cargo test -p llm_regression --test deterministic_health
+
       - name: Wasm build
         run: just build-wasm
+
+      - name: Upload wasm demo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-demo
+          path: web/
 
       - name: Asset validation
         run: just asset-validate

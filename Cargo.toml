@@ -4,6 +4,7 @@ members = [
     "crates/guardrail_core",
     "crates/guardrail_cli",
     "crates/llm_regression",
+    "crates/game_runner",
 ]
 resolver = "2"
 
@@ -24,4 +25,5 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 walkdir = "2"
+bevy = { version = "0.15", default-features = true }
 

@@ -79,6 +79,26 @@ Hypothesis: <suspected root cause>
 Ask: reproduce steps, scoped fix diff, updates to regression harness template, and log instrumentation plan.
 ```
 
+### 5.5 Bevy System Implementation
+
+```
+Target: <native | wasm> (mention feature flags + env vars such as SIMULATION_SEED).
+Schedule: <FixedUpdate / Update / custom schedule> and ordering requirements.
+Resources/components: <SimulationParams, PlayerHealth, UI entities, etc.>
+Sandbox: <examples/systems/<feature>> (optional) + reset command.
+Ask: implement/modify systems with deterministic RNG (StdRng::seed_from_u64), update regression tests, and list telemetry spans to inspect.
+Validation: just verify-core, cargo test -p llm_regression --test deterministic_health, cargo run -p guardrail_cli -- validate ...
+```
+
+### 5.6 Sandbox Experiment Workflow
+
+```
+Experiment path: examples/systems/<feature>
+Prompt log: .llm_logs/<feature>.md
+Desired outcome: <prototype behavior or perf target>
+Ask: describe spike plan, files to touch, and how to run via `cargo run -p game_runner` / SANDBOX_SCENE=<feature>. Include cleanup/reset instructions.
+```
+
 ## 6. Review Checklist for LLM Output
 
 1. All code paths reachable by user input have tests (unit or regression) that fail without the change.

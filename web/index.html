@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Core Game Sandbox</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #05060c;
+        font-family: system-ui, sans-serif;
+      }
+      #bevy-canvas {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      .fallback {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        color: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="fallback">
+      Loading Bevy wasm build… if nothing happens run <code>just build-wasm</code>
+      and serve <code>web/</code>.
+    </div>
+    <canvas id="bevy-canvas"></canvas>
+    <script type="module">
+      import init from "./pkg/game_runner.js";
+
+      init().catch((err) => {
+        console.error("Bevy wasm bootstrap failed", err);
+      });
+    </script>
+  </body>
+</html>
+
