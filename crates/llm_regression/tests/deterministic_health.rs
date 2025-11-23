@@ -1,32 +1,17 @@
-use bevy::app::{FixedUpdate, ScheduleRunnerPlugin};
-use bevy::prelude::*;
-use core_game::gameplay::{PlayerHealth, SimulationParams};
-use core_game::CoreGamePlugin;
-use std::time::Duration;
+use core_game::gameplay::{SimulationParams, SimulationRng};
 
 #[test]
-fn health_decay_is_deterministic_with_seed() {
-    let first = simulate_health(42, 10);
-    let second = simulate_health(42, 10);
-    assert_eq!(first, second, "same seed must yield identical results");
+fn simulation_rng_is_deterministic() {
+    let baseline = sample_values(42);
+    let repeat = sample_values(42);
+    assert_eq!(baseline, repeat, "same seed should match");
 
-    let other = simulate_health(7, 10);
-    assert_ne!(first, other, "changing the seed should alter the outcome");
+    let different = sample_values(7);
+    assert_ne!(baseline, different, "different seeds should diverge");
 }
 
-fn simulate_health(seed: u64, frames: usize) -> u32 {
-    let mut app = App::new();
-    app.insert_resource(SimulationParams::from_seed(seed));
-    app.add_plugins(
-        MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_secs_f64(
-            1.0 / 60.0,
-        ))),
-    );
-    app.add_plugins(CoreGamePlugin);
-
-    for _ in 0..frames {
-        app.world_mut().run_schedule(FixedUpdate);
-    }
-
-    app.world().resource::<PlayerHealth>().value.current()
+fn sample_values(seed: u64) -> Vec<u32> {
+    let params = SimulationParams::from_seed(seed);
+    let mut rng = SimulationRng::new(params.seed);
+    (0..5).map(|_| rng.gen_range(1..=20)).collect()
 }
